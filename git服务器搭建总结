@@ -1,0 +1,112 @@
+
+一 ：基础知识
+如果设备较少或者你只想在小型开发团队里尝试 Git ，那么一切都很简单。架设 Git 服务最复杂的地方在于账户管理。如果需要仓库对特定的用户可读，而给另一部分用户读写权限，那么访问和许可的安排就比较困难。
+
+SSH 连接
+如果已经有了一个所有开发成员都可以用 SSH 访问的服务器，架设第一个服务器将变得异常简单。
+
+如果需要团队里的每个人都对仓库有写权限，又不能给每个人在服务器上建立账户，那么提供 SSH 连接就是唯一的选择了。
+
+有好几个办法可以让团队的每个人都有访问权。第一个办法是给每个人建立一个账户，直截了当但略过繁琐。反复运行 adduser 并给所有人设定临时密码可不是好玩的。
+
+第二个办法是在主机上建立一个 git 账户，让每个需要写权限的人发送一个 SSH 公钥，然后将其加入git 账户的 ~/.ssh/authorized_keys 文件里。这样一来，所有人都将通过 git 账户访问主机。这丝毫不会影响提交的数据 — 访问主机用的身份不会影响提交对象的提交者信息。
+
+从客户端来看，SSH提供两种级别的安全验证。
+
+第一种级别（基于口令的安全验证）
+
+        只要你知道自己帐号和口令，就可以登录到远程主机。所有传输的数据都会被加密，但是不能保证你正在连接的服务器就是你想连接的服务器。
+
+第二种级别（基于密匙的安全验证）
+
+        需要依靠密钥，也就是你必须为自己创建一对密匙，并把公用密匙放在需要访问的服务器上。如果你要连接到SSH服务器上，客户端软件就会向服务器发出请求，请求用你的密匙进行安全验证。服务器收到请求之后，先在该服务器上你的主目录下寻找你的公用密匙，然后把它和你发送过来的公用密匙进行比较。如果两个密匙一致，服务器就用公用密匙加密“质询”（challenge）并把它发送给客户端软件。客户端软件收到“质询”之后就可以用你的私人密匙解密再把它发送给服务器。这种级别的验证不需要再网络上传送口令。
+
+二：创建密钥
+
+大多数 Git 服务器都会选择使用 SSH 公钥来进行授权。系统中的每个用户都必须提供一个公钥用于授权.SSH 公钥默认储存在账户的主目录下的 ~/.ssh 目录  .pub后缀的就是公钥。可以现查看主目录下是否存在SSH密钥，若没有则可以使用ssh-keygen 来创建，该程序在 Linux/Mac 系统上由 SSH 包提供，而在 Windows 上则包含在 MSysGit 包里。
+它先要求你确认保存公钥的位置（.ssh/id_rsa），然后它会让你重复一个密码两次，如果不想在使用公钥的时候输入密码，可以留空。
+三：开始搭建git服务器
+1.确保服务器已安装SSH服务，若没有可以使用：
+apt-get install ssh                    进行安装
+ps -e|grep ssh                            测试ssh服务是否启动
+2.创建一个git用户,并为其创建一个.ssh目录
+➜  ~  sudo adduser git
+[sudo] password for renzhen: 
+正在添加用户"git"...
+正在添加新组"git" (1001)...
+正在添加新用户"git" (1002) 到组"git"...
+创建主目录"/home/git"...
+正在从"/etc/skel"复制文件...
+输入新的 UNIX 密码：                           输入新的UNIX密码是该用户的密码，其余的则可以使用回车默认
+重新输入新的 UNIX 密码： 
+passwd：已成功更新密码
+正在改变 git 的用户信息
+请输入新值，或直接敲回车键以使用默认值
+	全名 []: 
+	房间号码 []: 
+	工作电话 []: 
+	家庭电话 []: 
+	其它 []: 
+这些信息是否正确？ [Y/n] y
+➜  ~  su git                        注：该命令之后要求输入密码，该密码是上面为git用户设置的密码
+➜  ~  cd
+➜  ~  mkdir .ssh
+3.接下来，把开发者的 SSH 公钥添加到这个用户的 authorized_keys 文件中：若有多个公钥，怎一个一个加入其尾部即可
+➜  ~  cat /home/jack/.ssh/id_rsa.pub >> ~/.ssh/authorized_keys
+cat: /home/jack/.ssh/id_rsa.pub: 权限不够
+ 若出现上述问题，则是由于当前是在git用户下，/home/jack/.ssh/id_rsa.pub在root用户下，出现了权限不够问题，可用下面的方法解决：
+➜  ~  sudo -s -H
+[sudo] password for jack: 
+jack-pc# cp /home/jack/.ssh/id_rsa.pub /home/git/.ssh/authorized_keys
+
+4.现在可以用 --bare 选项运行 git init 来建立一个裸仓库，这会初始化一个不包含工作目录的仓库。裸仓库没有工作区，因为服务器上的Git仓库纯粹是为了共享，所以不让用户直接登录到服务器上去改工作区，并且服务器上的Git仓库通常都以.git结尾。
+➜  ~  mkdir project.git
+➜  ~  cd project.git
+➜  project.git  git --bare init
+初始化空的 Git 版本库于 /home/git/project.git/
+5.测试
+到现在为止，其他用户(假设该用户是Tom)就可以把它加为远程仓库，推送一个分支，从而把第一个版本的项目文件上传到仓库里了。值得注意的是，每次添加一个新项目都需要通过 shell 登入主机并创建一个裸仓库目录。我们以 gitserver 作为 git 用户及项目仓库所在的主机名。如果在网络内部运行该主机，并在 DNS 中设定 gitserver 指向该主机，也可以直接使用ip地址：
+
+➜  ~  mkdir myproject
+➜  ~  cd myproject
+➜  myproject  vim readme.txt
+➜  myproject  git init
+➜  myproject git:(master) ✗ git add readme.txt
+➜  myproject git:(master) ✗ git commit -m "commit file"
+➜  myproject git:(master) git remote add origin git@gitserver:project.git
+➜  myproject git:(master) git push origin master
+
+这样，其他人的克隆和推送也一样变得很简单：
+➜  ~  git clone git@gitserver:project.git
+用上面的方法可以很快捷地为少数几个开发者架设一个可读写的 Git 服务。
+
+6.作为一个额外的防范措施，你可以用 Git 自带的 git-shell 工具限制 git 用户的活动范围。只要把它设为 git 用户登入的 shell，那么该用户就无法使用普通的 bash 或者 csh 什么的 shell 程序。编辑/etc/passwd 文件：
+➜  ~  sudo vim /etc/passwd
+在文件的末尾找到：
+git:x:1002:1001:,,,:/home/git:/bin/zsh
+把 bin/zsh 改为 /usr/bin/git-shell：
+git:x:1002:1001:,,,:/home/git:/usr/bin/git-shell
+现在git用户只能用SSH链接来推送和获取Git仓库，而不能直接使用主机shell。尝试普通SSH登陆的话，会看到下面这样的拒绝信息：
+➜  ~  ssh git@gitserver
+fatal: Interactive git shell is not enabled.
+hint: ~/git-shell-commands should exist and have read and execute access.
+Connection to gitserver closed.
+
+7.配置过程可能会遇到的问题及解决方法
+1.若在推送到远程git仓库的过程中遇到这样的问题：
+
+原因：
+git库权限的问题
+➜  ~  ls -la，查看git库的所有者
+
+解决：
+在git用户下：
+➜  ~ sudo chown -R git:git git库
+2.若在ssh链接服务器时出现警告信息，可尝试先删除~./ssh/know_hosts文件，下次登录其他的机器时会自动生成。这个文件是记录机器指纹的，ssh会把每个你访问过计算机的公钥(public key)都记录在~/.ssh/known_hosts。当下次访问相同计算机时，OpenSSH会核对公钥。如果公钥不同，OpenSSH会发出警告， 避免你受到DNS Hijack之类的攻击。
+3.当ssh一台没登陆过的机器的时候,往往需要输入yes,确认一下添加know_hosts文件,在一些脚本处理的时候很不方便,可以修改/etc/ssh/ssh_config 文件达到自动添加,注意是ssh_config,不是sshd_config。
+打开/etc/ssh/ssh_config文件：
+找到：
+# StrictHostKeyChecking ask
+修改为
+StrictHostKeyChecking no
+这个选项会自动的把 ssh 的机器添加到 /root/.ssh/know_hosts 中。
